@@ -22,6 +22,12 @@ Acá aprenderemos métodos para detectar entidades importantes o centrales en un
 * **tidygraph:** para manipular y analizar gráficos de red.
 * **ggraph:** para visualizar objetos de red creados con el paquete tidygraph.
 
+----------------------------------------------------------------------------------
+Nota: Es posible que al ejecutar este codigo requiera de instalación previa 
+install.packages("remotes")
+remotes::install_github("kassambara/navdata")
+------------------------------------------------------------------------------------
+
 ```{r message=FALSE}
 library(tidyverse)
 library(tidygraph)
