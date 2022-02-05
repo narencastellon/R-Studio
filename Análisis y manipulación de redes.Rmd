@@ -1,0 +1,264 @@
+---
+title: "Análisis y manipulación de redes"
+author: "Naren Castellon"
+date: "10/23/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Este sección describiremos cómo manipular y analizar un gráfico de red en R usando el paquete `tidygraph`.
+
+ El paquete `tidygraph` proporciona un marco ordenado para manipular fácilmente diferentes tipos de datos relacionales, incluidos: gráficos, redes y árboles.
+
+En el marco `tidygraph`, los datos de la red se consideran dos tablas de datos ordenadas, una que describe los datos del nodo y la otra es para los datos del borde. El paquete proporciona una solución simple para cambiar entre las dos tablas y proporciona forma para manipularlas usando `dplyr`.
+
+Acá aprenderemos métodos para detectar entidades importantes o centrales en un gráfico de red. También presentaremos cómo detectar grupo (o clúster) en una red.
+
+## **1. Cargar paquetes requeridos.**
+* **tidyverse:** para la manipulación y visualización de datos en general.
+* **tidygraph:** para manipular y analizar gráficos de red.
+* **ggraph:** para visualizar objetos de red creados con el paquete tidygraph.
+
+```{r message=FALSE}
+library(tidyverse)
+library(tidygraph)
+library(ggraph)
+```
+
+## **2. Crea objetos de red.**
+**Funciones de la tecla R :**
+
+* `tbl_graph()`. Crea un objeto de red a partir de datos de nodos y bordes
+* `as_tbl_graph()`. Convierte datos y objetos de red en una red tbl_graph.
+
+**Conjunto de datos de demostración :** los datos phone.call2[del paquete navdata], que es una lista que contiene los nodos y la lista de bordes preparada.
+
+#### **2.1 Utilice tbl_graph.**
+* Cree un objeto de red utilizando tbl_graph  los datos de la llamada telefónica:
+
+```{r}
+library("navdata")
+data("phone.call2")
+phone.net <- tbl_graph(
+  nodes = phone.call2$nodes, 
+  edges = phone.call2$edges,
+  directed = TRUE)
+```
+
+```{r}
+phone.net
+```
+
+* Visualizar:
+```{r}
+ggraph(phone.net, layout = "graphopt") + 
+  geom_edge_link(width = 1, colour = "lightgray") +
+  geom_node_point(size = 4, colour = "#00AFBB") +
+  geom_node_text(aes(label = label), repel = TRUE)+
+  theme_graph()
+```
+
+#### **2.2. Utilice la función as_tbl_graph R.**
+
+También se puede utilizar la función as_tbl_graph() para convertir la siguiente estructura de datos y objetos de red:
+
+* **data.frame**, **list** y **matrix** los datos.
+* **igraph** objetos de red [paquete igraph].
+* **network** objetos de red [paquete de red].
+* **dendrogram** y **hclust**[paquete de stats].
+* **Node** [paquete data.tree].
+* **phylo** y **evonet** [paquete de simios].
+**graphNEL, graphAM, graphBAM** [Paquete gráfico (Bioconductor)].
+
+En el siguiente ejemplo, crearemos un gráfico de red de matriz de correlación. Se utilizará el conjunto de datos `mtcars`.
+
+**Calcule la matriz de correlación** entre automóviles usando el paquete `corrr`:
+
+1. Utilice el conjunto de datos de mtcars
+2. Calcule la matriz de correlación: correlate()
+3. Convierta el triángulo superior en NA: shave()
+4. Estire el marco de datos de correlación en formato largo
+5. Mantenga solo una alta correlación
+
+```{r warning=FALSE, message=FALSE}
+library(corrr)
+res.cor <- mtcars [, c(1, 3:6)] %>%  # (1)
+  t() %>% correlate() %>%            # (2)
+  shave(upper = TRUE) %>%            # (3)
+  stretch(na.rm = TRUE) %>%          # (4)
+  filter(r >= 0.998)                 # (5)
+res.cor
+```
+
+**Cree el gráfico de la red de correlación :**
+
+```{r message=FALSE}
+set.seed(1)
+cor.graph <- as_tbl_graph(res.cor, directed = FALSE)
+ggraph(cor.graph) + 
+  geom_edge_link() + 
+  geom_node_point() +
+  geom_node_text(
+    aes(label = name), size = 3, repel = TRUE) +
+  theme_graph()
+```
+
+## **3. Imprime un objeto de red.**
+```{r}
+cor.graph
+```
+
+La salida muestra:
+
+* un objeto tbl_graph con 24 nodos y 59 bordes (ramas). Los nodos son los nombres de los coches y los bordes son los enlaces de correlación.
+* las primeras seis filas de "Datos de nodo" "y las tres primeras de" Datos de borde ".
+* que los datos del nodo están activos .
+
+La noción de un tibble activo dentro de un objeto `tbl_graph` hace posible manipular los datos en un tibble a la vez. Los nodos tibble están activados de forma predeterminada, pero puede cambiar qué tibble está activo con la función `activate()`.
+
+Si desea reorganizar las filas en los bordes tibble para enumerar las que tienen la "r" más alta primero, puede usar `activate()` y luego `arrange()`. Por ejemplo
+```{r}
+cor.graph %>% 
+  activate(edges) %>% 
+  arrange(desc(r))
+```
+
+Tenga en cuenta que, para extraer los datos activos actuales como tibble, puede utilizar la función `as_tibble(cor.graph)`.
+
+## **4. Manipulación de gráficos de red.**
+Con el paquete `tidygraph`, puede manipular fácilmente los nodos y los datos de los bordes en el objeto de gráfico de red utilizando dplyr. Por ejemplo, puede agregar nuevas columnas o cambiar el nombre de las columnas en los datos de nodos / bordes.
+
+También puede filtrar y organizar los datos. Tenga en cuenta que, al aplicar `filter()/slice()`en datos de nodo, se eliminarán los bordes que terminan en los nodos eliminados.
+
+En esta sección manipularemos el gráfico de la red de correlación.
+
+1. **Modifique los datos de los nodos :**
+
+a. Agrupe los coches por la variable "cyl" (número de cilindros) en el conjunto de datos original de mtcars. Colorearemos los coches por grupos.
+b. Unir la información del grupo a los datos de los nodos
+c. Cambie el nombre de la columna "nombre", en los datos de los nodos, a "etiqueta"
+
+Puede usar los `dplyr` de la siguiente manera:
+```{r warning=FALSE}
+# Car groups info
+cars.group <- data_frame(
+  name = rownames(mtcars),
+  cyl = as.factor(mtcars$cyl))
+# Modify the nodes data
+cor.graph <- cor.graph %>%
+  activate(nodes) %>%
+  left_join(cars.group, by = "name") %>%
+  rename(label = name)
+```
+
+2. **Modifique los datos del borde** . Cambie el nombre de la columna "r" a "peso".
+```{r}
+cor.graph <- cor.graph %>%
+  activate(edges) %>%
+  rename(weight = r)
+```
+
+3. **Muestra el objeto de gráficos modificado final :**
+```{r}
+cor.graph
+```
+
+4. **Visualice la red de correlación .**
+
+* Cambiar el ancho de los bordes según el peso variable
+* Escale el ancho de los bordes estableciendo el ancho mínimo en 0.2 y el máximo en 1.
+* Cambie el color de los coches (nodos) según la variable de agrupación cyl.
+```{r warning=FALSE, message=FALSE}
+set.seed(1)
+ggraph(cor.graph) + 
+  geom_edge_link(aes(width = weight), alpha = 0.2) + 
+  scale_edge_width(range = c(0.2, 1)) +
+  geom_node_point(aes(color = cyl), size = 2) +
+  geom_node_text(aes(label = label), size = 3, repel = TRUE) +
+  theme_graph()
+```
+
+## **5. Análisis de red.**
+En estas secciones, describimos métodos para detectar entidades importantes o centrales en un gráfico de red. También presentaremos cómo detectar una comunidad (o clúster) en una red.
+
+#### **5.1 Centralidad.**
+La centralidad es un concepto importante al analizar un gráfico de red. La centralidad de un nodo / borde mide qué tan central (o importante) es un nodo o borde en la red.
+
+Consideramos que una entidad es importante, si tiene conexiones con muchas otras entidades. La centralidad describe la cantidad de bordes que están conectados a los nodos.
+
+Hay muchos tipos de puntuaciones que determinan la centralidad. Uno de los famosos es el algoritmo de pagerank que impulsaba la búsqueda de Google al principio.
+
+Ejemplos de enfoques comunes para medir la centralidad incluyen:
+
+* **centralidad de intermediación.** La centralidad de intermediación para cada nodo es el número de caminos más cortos que pasan a través de los nodos.
+
+* **centralidad de cercanía.** La centralidad de proximidad mide cuántos pasos se requieren para acceder a todos los demás nodos desde un nodo determinado. Describe la distancia de un nodo a todos los demás nodos. Cuanto más central es un nodo, más cerca está de todos los demás nodos.
+
+* **centralidad del vector propio.** Un nodo es importante si está vinculado a otros nodos importantes. La centralidad de cada nodo es proporcional a la suma de las centralidades de los nodos a los que está conectado. En general, los nodos con alta centralidad de vectores propios son aquellos que están vinculados a muchos otros nodos que, a su vez, están conectados a muchos otros (y así sucesivamente).
+
+* Las centralidades de eje y autoridad son generalizaciones de la centralidad de vector propio. Un nodo de concentrador alto apunta a muchas buenas autoridades y un nodo de alta autoridad recibe de muchos buenos concentradores.
+
+El paquete `tidygraph` contiene más de 10 medidas de centralidad, precedidas del término centrality_. Estas medidas incluyen:
+
+`centrality_authority()`
+
+`centrality_betweenness()`
+
+`centrality_closeness()`
+
+`centrality_hub()`
+
+`centrality_pagerank()`
+
+`centrality_eigen()`
+
+`centrality_edge_betweenness()`
+
+Todas estas funciones de centralidad devuelven un vector numérico que coincide con los nodos (o bordes en el caso de `centrality_edge_betweenness ()).
+
+En los siguientes ejemplos, usaremos el gráfico de red de llamadas telefónicas. Cambiaremos el color y el tamaño de los nodos según sus valores de centralidad.
+
+```{r warning=FALSE}
+set.seed(123)
+phone.net %>%
+  activate(nodes) %>%
+  mutate(centrality = centrality_authority()) %>% 
+  ggraph(layout = "graphopt") + 
+  geom_edge_link(width = 1, colour = "lightgray") +
+  geom_node_point(aes(size = centrality, colour = centrality)) +
+  geom_node_text(aes(label = label), repel = TRUE)+
+  scale_color_gradient(low = "yellow", high = "red")+
+  theme_graph()
+```
+
+*Para un problema dado, puede probar las diferentes puntuaciones de centralidad para decidir qué medida de centralidad tiene más sentido para su pregunta específica.*
+
+#### **5.2 Agrupación.**
+
+La agrupación en clústeres es una operación común en el análisis de redes y consiste en agrupar nodos según la topología del gráfico.
+
+A veces se lo denomina detección de comunidad en función de sus puntos en común en el análisis de redes sociales.
+
+Muchos algoritmos de agrupación en clústeres de están disponibles en el paquete `tidygraph` y tienen el prefijo del término group_. Éstos incluyen:
+
+* **Hallazgo de la comunidad de Infomap**. Agrupa nodos minimizando la longitud de descripción esperada de una trayectoria de caminante aleatoria. Función: `group_infomap()`.
+
+* **Detección de estructuras comunitarias basada en la intermediación de bordes**. Agrupa nodos densamente conectados. Función R: group_edge_betweenness().
+En el siguiente ejemplo, usaremos los gráficos de la red de correlación para detectar clústeres o comunidades:
+
+```{r warning=FALSE}
+set.seed(123)
+cor.graph %>%
+  activate(nodes) %>%
+   mutate(community = as.factor(group_infomap())) %>% 
+  ggraph(layout = "graphopt") + 
+  geom_edge_link(width = 1, colour = "lightgray") +
+  geom_node_point(aes(colour = community), size = 4) +
+  geom_node_text(aes(label = label), repel = TRUE)+
+  theme_graph()
+```
+
+*Se detectan tres comunidades.*
